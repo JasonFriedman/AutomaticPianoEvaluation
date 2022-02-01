@@ -21,7 +21,7 @@ if (nargin<2)
 end
 
 fid = fopen(filename);
-[A count] = fread(fid,'uint8');
+[A,~] = fread(fid,'uint8');
 fclose(fid);
 
 if (rawbytes) midi.rawbytes_all = A; end
@@ -271,7 +271,7 @@ for i=1:num_tracks
       % DEBUG:
       if (i==2)
 	  if (msgCtr==1)
-	    disp(msg_type);
+	    %disp(msg_type);
 	  end
       end
       
@@ -298,7 +298,7 @@ for i=1:num_tracks
 	% DEBUG:
 	if (i==2)
 	  if (msgCtr==1)
-	    disp([999  Hn type])
+	    %disp([999  Hn type])
 	  end
 	end
 	
