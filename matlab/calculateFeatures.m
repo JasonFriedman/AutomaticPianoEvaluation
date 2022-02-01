@@ -9,7 +9,73 @@
 %          tocheck - which notes (indices) in the performance correspond to notes in the "ideal"
 %          tocheckideal - which notes (indices) in the ideal correspond to those in the performance
 %          details - additional quantities calculated which may be of use
+%
+% If no input arguments are provided, it will calculate features for all
+% songs and save them in a .mat file evaluationfeatures (as well as
+% including the teacher evaluations)
 function [features,tocheck,tocheckideal,details] = calculateFeatures(midi,idealmidi,idealoverallduration)
+
+if nargin==0
+    [~,M_duration] = readIdealBPMs;
+
+    d = dir('songs/real data/*/*.midi');
+
+    for k=1:numel(d) % 25
+        fn = [d(k).folder '/' d(k).name];
+        midi = readmidifile(fn);
+        slashes = strfind(d(k).folder,'/');
+        songname = d(k).folder(slashes(end)+1:end);
+        ideal_fn = ['songs/original songs/' songname '.midi'];
+        idealmidi = readmidifile(ideal_fn);
+        idealduration = M_duration(songname);
+        features(k) = calculateFeatures(midi,idealmidi,idealduration);
+    end
+
+    t = struct2table(features);
+
+    % Add the teacher evaluations
+
+    % rater (8) * performance (25) * rating(8)
+    [evaluation,names] = readEvaluation;
+    meanevaluation = squeeze(nanmean(evaluation(:,:,1:5)));
+
+    % same vs different piece - take the majority (could have used column 6
+    % ...)
+    selected_same = sum(~isnan(squeeze(evaluation(:,:,7))));
+    selected_different = sum(~isnan(squeeze(evaluation(:,:,8))));
+    same = selected_same > selected_different;
+    different = selected_same < selected_different;
+    equal = selected_same == selected_different;
+    meanevaluation(same,6) = 1; % 1 = selected same
+    meanevaluation(different,6) = 2; % 2 = selected different
+    meanevaluation(equal,6) = 0; % does not happen
+
+    meanevaluation(same,7) = nanmean(evaluation(:,same,7));
+    meanevaluation(different,7) = NaN;
+    meanevaluation(equal,7) = NaN;
+
+    meanevaluation(same,8) = NaN;
+    meanevaluation(different,8) = nanmean(evaluation(:,different,8));
+    meanevaluation(equal,8) = NaN;
+
+    for k=1:8
+        t.(names{k}) = meanevaluation(:,k);
+    end
+
+    % calculate z transforms - in the end this was useless
+    % because it is a linear transformation so doesn't really change
+    % anything
+    fieldnames = fields(t);
+    for k=1:numel(fieldnames)-3
+        t_ztransformed.(fieldnames{k}) = zscore(t.(fieldnames{k}));
+    end
+
+    t_ztransformed = struct2table(t_ztransformed);
+
+    save evaluationfeatures t t_ztransformed
+
+    return
+end
 
 [details.dtw,ix,iy] = dtw(midi.note,idealmidi.note);
 details.editdistance = editDistance(char(midi.note),char(idealmidi.note));
@@ -80,6 +146,17 @@ Y = (playedvelocity - idealvelocity)';
 
 [features.velocityslope, features.velocityoffset, features.velocitystd] = calculateparams(Y);
 
+
+% This feature is not included because it is too similar to note duration
+% relativepresstime - duration / inter-note-interval
+% can't calculate it for the last note
+
+%actualarticulation = playeddurations(1:end-1) ./ actualgaps;
+%idealarticulation = idealdurations(1:end-1) ./ idealgaps;
+%Y = ((actualarticulation-idealarticulation) ./ idealarticulation)';
+%[features.elativepresstimeslope,features.elativepresstimeoffset,features.elativepresstimestd] = calculateparams(Y);
+
+
 if nargout>3
     details.playeddurations = playeddurations;
     details.idealdurations = idealdurations;
@@ -90,9 +167,17 @@ if nargout>3
     details.idealmididuration = idealmididuration;
 end
 
+save evaluationfeatures features details
+
 function [slope,offset,thestd] = calculateparams(Y)
 
 X = [(1:numel(Y))' ones(size(Y))];
+
+% If there are any illegal values (-inf or inf) remove them
+goodY = ~isinf(Y) & ~isnan(Y);
+Y = Y(goodY);
+X = X(goodY,:);
+
 b = regress(Y,X);
 predicted = b(1) * (1:numel(Y))' + b(2);
 slope = b(1);
